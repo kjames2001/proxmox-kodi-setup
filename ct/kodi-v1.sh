@@ -5,8 +5,8 @@ APP="kodi"
 var_disk="8"
 var_cpu="2"
 var_ram="2048"
-var_os="ubuntu"
-var_version="22.04"
+var_os="debian"
+var_version="13"
 NSAPP=$(echo ${APP,,} | tr -d ' ')
 var_install="${NSAPP}-install"
 NEXTID=$(pvesh get /cluster/nextid)
@@ -55,9 +55,9 @@ function msg_ok() {
     echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
 }
 function PVE_CHECK() {
-    PVE=$(pveversion | grep "pve-manager/7" | wc -l)
+    PVE=$(pveversion | grep -cE "pve-manager/[789]")
 if [[ $PVE != 1 ]]; then
-   echo -e "${RD}This script requires Proxmox Virtual Environment 7.0 or greater${CL}"
+   echo -e "${RD}This script requires Proxmox Virtual Environment 7.x or greater${CL}"
    echo -e "Exiting..."
    sleep 2
    exit
@@ -105,7 +105,7 @@ function load_settings() {
 
 function show_saved_settings() {
     echo -e "\n${GN}=== Previously Saved Settings ===${CL}"
-    echo -e "${DGN}Ubuntu Version: ${BGN}$var_version${CL}"
+    echo -e "${DGN}Debian Version: ${BGN}$var_version${CL}"
     echo -e "${DGN}Container Type: ${BGN}$([ "$CT_TYPE" = "1" ] && echo "Unprivileged" || echo "Privileged")${CL}"
     echo -e "${DGN}Container ID: ${BGN}$CT_ID${CL}"
     echo -e "${DGN}Hostname: ${BGN}$HN${CL}"
@@ -267,8 +267,8 @@ function ask_xfce_options() {
     while true; do
         APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
             "Select applications to install:" 22 68 10 \
-            "KODI_PPA"     "Kodi Media Center (PPA - v20.x)"       OFF \
-            "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)"   OFF \
+            "KODI_PPA"     "Kodi Media Center (apt v21.x / Flatpak v21.x)" OFF \
+            "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)"          OFF \
             "RETROARCH"    "RetroArch Emulation Frontend"           OFF \
             "STEAM"        "Steam (Big Picture mode supported)"     OFF \
             "FIREFOX"      "Firefox web browser"                    OFF \
@@ -300,12 +300,12 @@ function ask_xfce_options() {
 }
 
 function advanced_settings() {
-var_version=$(whiptail --title "UBUNTU VERSION" --radiolist "Choose Version" 10 58 2 \
-"20.04" "Focal" OFF \
-"22.04" "Jammy" ON \
+var_version=$(whiptail --title "DEBIAN VERSION" --radiolist "Choose Version" 10 58 2 \
+"12" "Bookworm" OFF \
+"13" "Trixie" ON \
 3>&1 1>&2 2>&3)
 exitstatus=$?
-if [ $exitstatus = 0 ]; then echo -e "${DGN}Using Ubuntu Version: ${BGN}$var_version${CL}"; fi
+if [ $exitstatus = 0 ]; then echo -e "${DGN}Using Debian Version: ${BGN}$var_version${CL}"; fi
 CT_TYPE=$(whiptail --title "CONTAINER TYPE" --radiolist --cancel-button Exit-Script "Choose Type" 8 58 2 \
 "1" "Unprivileged" ON \
 "0" "Privileged" OFF \
@@ -530,10 +530,12 @@ cat <<EOF >> $LXC_CONFIG
 dev0: /dev/fuse
 lxc.cgroup2.devices.allow: c 226:0 rwm
 lxc.cgroup2.devices.allow: c 226:128 rwm
+lxc.cgroup2.devices.allow: c 226:64 rwm
 lxc.cgroup2.devices.allow: c 29:0 rwm
 lxc.mount.entry: /dev/fb0 dev/fb0 none bind,optional,create=file
 lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir
 lxc.mount.entry: /dev/dri/renderD128 dev/renderD128 none bind,optional,create=file
+lxc.mount.entry: /dev/kfd dev/kfd none bind,optional,create=file
 lxc.cgroup2.devices.allow: c 4:7 rwm
 lxc.mount.entry: /dev/tty7 dev/tty7 none bind,optional,create=file
 lxc.cgroup2.devices.allow: c 13:* rwm
@@ -575,6 +577,8 @@ EOF
 /bin/chmod 660 /dev/dri/*
 /bin/chown :${RENDER_GID} /dev/renderD128
 /bin/chmod 660 /dev/renderD128
+/bin/chown :${VIDEO_GID} /dev/kfd
+/bin/chmod 660 /dev/kfd
 /bin/chown :${TTY_GID} /dev/tty7
 /bin/chown :${INPUT_GID} /dev/input/*
 /bin/chown :${AUDIO_GID} /dev/snd/*

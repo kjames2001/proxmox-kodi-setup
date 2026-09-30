@@ -51,7 +51,7 @@ if [ -n "${INSTALL_APPS:-}" ]; then
 else
     # Fallback: interactive prompts if called standalone
     echo -e "\n${GN}=== Optional Software ===${CL}"
-    read -p "Install Kodi? (1=PPA / 2=Flatpak / n=No): " -n 1 -r KODI_CHOICE; echo
+    read -p "Install Kodi? (1=apt / 2=Flatpak / n=No): " -n 1 -r KODI_CHOICE; echo
     [[ "$KODI_CHOICE" = "1" ]] && INSTALL_KODI_PPA="y"
     [[ "$KODI_CHOICE" = "2" ]] && INSTALL_KODI_FLATPAK="y"
     read -p "Install RetroArch? (y/n): "   -n 1 -r INSTALL_RETROARCH;   echo
@@ -81,17 +81,51 @@ CONFIGURE_AUDIO="${CONFIGURE_AUDIO:-no}"
 KODI_PASS="${KODI_PASS:-kodi}"
 
 # ─────────────────────────────────────────────
-# Base system
+# Base system — Debian 13 (Trixie)
 # ─────────────────────────────────────────────
 msg_info "Updating system"
 apt-get update -qq &>/dev/null
 apt-get upgrade -y -qq &>/dev/null
 msg_ok "System updated"
 
+# Debian 13 apt sources: add contrib, non-free, non-free-firmware
+# (Steam lives in contrib, AMD GPU firmware in non-free-firmware,
+#  Kodi/retroarch i386 deps need the full component list.)
+# Handles both classic sources.list and deb822 .sources format.
+msg_info "Configuring apt sources (contrib non-free non-free-firmware)"
+SOURCES_LIST="/etc/apt/sources.list"
+SOURCES_DIR="/etc/apt/sources.list.d"
+if [ -f "$SOURCES_LIST" ]; then
+    sed -i 's/main$/main contrib non-free non-free-firmware/g' "$SOURCES_LIST"
+    sed -i 's/main \[/main contrib non-free non-free-firmware \[/g' "$SOURCES_LIST" 2>/dev/null || true
+fi
+if [ -d "$SOURCES_DIR" ]; then
+    for src_file in "$SOURCES_DIR"/*.sources; do
+        [ -f "$src_file" ] || continue
+        if grep -q "^Components:" "$src_file"; then
+            sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' "$src_file"
+            sed -i 's/^Components: main .*/Components: main contrib non-free non-free-firmware/' "$src_file"
+        fi
+    done
+fi
+apt-get update -qq &>/dev/null
+msg_ok "Apt sources configured"
+
+# AMD GPU firmware — critical for RDNA 3.5 / gfx1150 (Radeon 880M/890M)
+msg_info "Installing AMD GPU firmware and Mesa drivers"
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    firmware-amd-graphics \
+    mesa-va-drivers \
+    mesa-vulkan-drivers \
+    libvulkan1 \
+    vulkan-tools \
+    &>/dev/null
+msg_ok "AMD firmware and Mesa drivers installed"
+
 msg_info "Installing XFCE and base X packages"
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     xfce4 xfce4-goodies xfce4-terminal openbox \
-    xorg xserver-xorg-video-intel \
+    xserver-xorg xserver-xorg-video-amdgpu xserver-xorg-video-modesetting \
     xserver-xorg-input-evdev \
     zenity xterm whiptail x11-utils xdotool \
     pulseaudio pulseaudio-utils pavucontrol alsa-utils \
@@ -332,8 +366,8 @@ if [[ "${INSTALL_RETROARCH}" =~ ^[Yy] ]]; then
     msg_info "Installing RetroArch dependencies"
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
         libgl1 libgles2 libegl1 \
-        libsdl2-2.0-0 libavcodec58 libavformat58 libswscale5 \
-        libfreetype6 libasound2 curl p7zip-full fuse unzip &>/dev/null
+        libsdl2-2.0-0 libavcodec61 libavformat61 libswscale8 \
+        libfreetype6 libasound2t64 curl p7zip-full fuse unzip &>/dev/null
     msg_ok "RetroArch dependencies installed"
 
     msg_info "Fetching latest RetroArch nightly build"
@@ -374,15 +408,13 @@ EOF
         fi
     fi
 
-    # PPA fallback if buildbot download fails — PPA also supports in-app core download
+    # apt fallback if buildbot download fails (retroarch is in the Debian 13 repos)
     if [ "$RETROARCH_INSTALLED" = false ]; then
-        msg_error "Buildbot failed — falling back to PPA"
-        add-apt-repository -y ppa:libretro/stable &>/dev/null
-        apt-get update -qq &>/dev/null
+        msg_error "Buildbot failed — falling back to apt repos"
         if DEBIAN_FRONTEND=noninteractive apt-get install -y -qq retroarch retroarch-assets 2>/dev/null \
                 && command -v retroarch &>/dev/null; then
             RETROARCH_INSTALLED=true
-            msg_ok "RetroArch installed via PPA (fallback — online updater enabled)"
+            msg_ok "RetroArch installed via apt (fallback — online updater enabled)"
         else
             msg_error "RetroArch installation failed"
         fi
@@ -443,17 +475,20 @@ EOF
 fi
 
 # ─────────────────────────────────────────────
-# KODI
+# KODI — apt (Debian 13 repo, v21.x) or Flatpak
+# Note: the team-xbmc PPA has no Debian 13 build, so KODI_PPA maps
+#       to the trixie repo version (same major line).
 # ─────────────────────────────────────────────
 KODI_INSTALLED=false
 if [[ "${INSTALL_KODI_PPA}" =~ ^[Yy] ]]; then
-    msg_info "Installing Kodi from PPA (v20.x)"
-    add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
+    msg_info "Installing Kodi from Debian 13 repos (v21.x)"
+    dpkg --add-architecture i386 &>/dev/null
     apt-get update -qq &>/dev/null
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq kodi &>/dev/null
+    apt-get install -y -f -qq &>/dev/null
     command -v kodi &>/dev/null \
-        && KODI_INSTALLED=true && msg_ok "Kodi PPA installed" \
-        || msg_error "Kodi PPA install failed"
+        && KODI_INSTALLED=true && msg_ok "Kodi installed via apt" \
+        || msg_error "Kodi apt install failed"
 elif [[ "${INSTALL_KODI_FLATPAK}" =~ ^[Yy] ]]; then
     msg_info "Installing Kodi via Flatpak (v21.x)"
     apt-get install -y -qq flatpak &>/dev/null
@@ -887,8 +922,9 @@ Terminal=false
 Categories=Game;Emulator;
 X-XFCE-DesktopFile-Trusted=true
 EOF
-    # PPA does not ship a .desktop file so RetroArch won't appear in the
-    # applications menu without this. Create it in /usr/share/applications/.
+    # The buildbot AppImage does not ship a .desktop file so RetroArch won't
+    # appear in the applications menu without this. Create it in
+    # /usr/share/applications/.
     cat > /usr/share/applications/retroarch.desktop <<'EOF'
 [Desktop Entry]
 Version=1.0
@@ -973,7 +1009,7 @@ EOF
 
 # systemctl poweroff/reboot work from the desktop because the polkit rule
 # grants the kodi user full permissions. xfce4-session-logout --halt/--reboot
-# triggers a DBus InvalidArgs bug on Ubuntu 22.04 and must not be used.
+# triggers a DBus InvalidArgs bug on some distros and must not be used.
 cat > /home/kodi/Desktop/shutdown.desktop <<'EOF'
 [Desktop Entry]
 Version=1.0
@@ -1065,7 +1101,7 @@ DESKEOF
 
 ! [ "$RETROARCH_INSTALLED" = true ] && \
 write_installer_shortcut "RETROARCH" "Install RetroArch" \
-'apt-get install -y -qq libgl1 libgles2 libegl1 libsdl2-2.0-0 libavcodec58 libavformat58 libswscale5 libfreetype6 libasound2 curl p7zip-full fuse &>/dev/null
+'apt-get install -y -qq libgl1 libgles2 libegl1 libsdl2-2.0-0 libavcodec61 libavformat61 libswscale8 libfreetype6 libasound2t64 curl p7zip-full fuse &>/dev/null
 BUILDBOT_DIR="https://buildbot.libretro.com/nightly/linux/x86_64"
 ARCHIVE=$(curl -s "${BUILDBOT_DIR}/" | grep -oP "\d{4}-\d{2}-\d{2}_RetroArch\.7z" | grep -v Qt | sort | tail -1)
 if [ -n "$ARCHIVE" ]; then
@@ -1081,17 +1117,15 @@ if [ -n "$ARCHIVE" ]; then
         chmod +x /usr/local/bin/retroarch
         echo "RetroArch installed from buildbot (online updater enabled)."
     else
-        echo "AppImage not found in archive — trying Flatpak..."
+        echo "AppImage not found in archive — trying apt..."
     fi
     rm -rf /tmp/retroarch.7z /tmp/retroarch-extract
 else
-    echo "Buildbot download failed — trying Flatpak..."
+    echo "Buildbot download failed — trying apt..."
 fi
 if ! command -v retroarch &>/dev/null; then
-    echo "Buildbot failed — trying PPA..."
-    add-apt-repository -y ppa:libretro/stable
-    apt-get update -qq
-    apt-get install -y retroarch retroarch-assets && echo "RetroArch installed via PPA."
+    echo "Trying apt repos..."
+    apt-get install -y retroarch retroarch-assets && echo "RetroArch installed via apt."
 fi'
 
 ! [ "$STEAM_INSTALLED" = true ] && \
@@ -1138,11 +1172,12 @@ write_installer_shortcut "GIMP" "Install GIMP" \
 # Kodi version switcher shortcuts (always present)
 cat > /usr/local/bin/install-kodi-ppa.sh <<'EOF'
 #!/usr/bin/env bash
-echo "Switching to Kodi PPA (v20.x)..."
+echo "Switching to Kodi from Debian repos (v21.x)..."
 flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi" && flatpak uninstall -y tv.kodi.Kodi &>/dev/null && echo "Removed Flatpak version."
-add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
+dpkg --add-architecture i386 &>/dev/null
 apt-get update &>/dev/null && apt-get install -y kodi &>/dev/null
-command -v kodi &>/dev/null && echo "Kodi PPA installed!" || echo "Install failed."
+apt-get install -y -f &>/dev/null
+command -v kodi &>/dev/null && echo "Kodi installed via apt!" || echo "Install failed."
 read -p "Press Enter to close..."
 EOF
 chmod +x /usr/local/bin/install-kodi-ppa.sh
@@ -1151,7 +1186,7 @@ cat > /home/kodi/Desktop/install-kodi-ppa.desktop <<'EOF'
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Switch to Kodi (PPA)
+Name=Switch to Kodi (apt)
 Exec=xfce4-terminal --hold --geometry=120x35 -e "sudo /usr/local/bin/install-kodi-ppa.sh"
 Icon=kodi
 Terminal=false
@@ -1161,7 +1196,7 @@ EOF
 cat > /usr/local/bin/install-kodi-flatpak.sh <<'EOF'
 #!/usr/bin/env bash
 echo "Switching to Kodi Flatpak (v21.x)..."
-dpkg -l | grep -q "^ii  kodi " && apt-get remove -y kodi kodi-bin kodi-data &>/dev/null && apt-get autoremove -y &>/dev/null && echo "Removed PPA version."
+dpkg -l | grep -q "^ii  kodi " && apt-get remove -y kodi kodi-bin kodi-data &>/dev/null && apt-get autoremove -y &>/dev/null && echo "Removed apt version."
 apt-get install -y flatpak &>/dev/null
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
 flatpak install -y --noninteractive flathub tv.kodi.Kodi &>/dev/null

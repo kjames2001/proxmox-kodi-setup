@@ -70,15 +70,39 @@ apt-get -y upgrade &>/dev/null
 msg_ok "Updated Container OS"
 
 msg_info "Installing Dependencies"
+dpkg --add-architecture i386 &>/dev/null
 apt-get install -y curl &>/dev/null
 apt-get install -y sudo &>/dev/null
 apt-get install -y gnupg &>/dev/null
+# Debian 13: add contrib + non-free + non-free-firmware components
+# (Kodi i386 deps, AMD GPU firmware)
+SOURCES_LIST="/etc/apt/sources.list"
+SOURCES_DIR="/etc/apt/sources.list.d"
+if [ -f "$SOURCES_LIST" ]; then
+    sed -i 's/main$/main contrib non-free non-free-firmware/g' "$SOURCES_LIST"
+    sed -i 's/main \[/main contrib non-free non-free-firmware \[/g' "$SOURCES_LIST" 2>/dev/null || true
+fi
+if [ -d "$SOURCES_DIR" ]; then
+    for src_file in "$SOURCES_DIR"/*.sources; do
+        [ -f "$src_file" ] || continue
+        if grep -q "^Components:" "$src_file"; then
+            sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' "$src_file"
+            sed -i 's/^Components: main .*/Components: main contrib non-free non-free-firmware/' "$src_file"
+        fi
+    done
+fi
+apt-get update &>/dev/null
 msg_ok "Installed Dependencies"
 
-msg_info "Setting Up Hardware Acceleration"  
+msg_info "Setting Up Hardware Acceleration"
+# Debian 13 (Trixie) package names: mesa-va-drivers replaces Ubuntu's
+# va-driver-all. firmware-amd-graphics is required for RDNA 3.5 (gfx1150,
+# Radeon 880M/890M) — without it the iGPU will not initialize in the LXC.
 apt-get -y install \
-    va-driver-all \
-    ocl-icd-libopencl1 &>/dev/null 
+    firmware-amd-graphics \
+    mesa-va-drivers \
+    mesa-vulkan-drivers \
+    ocl-icd-libopencl1 &>/dev/null
 set +e
 alias die=''
 apt-get install --ignore-missing -y beignet-opencl-icd &>/dev/null
