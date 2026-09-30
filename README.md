@@ -16,14 +16,14 @@ The iGPU is shared across containers via bind-mounts of `/dev/dri`,
 ## To create a new Proxmox Kodi Media Manager, run the following in the Proxmox Shell.
 
 ```yaml
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/main/ct/kodi-v1.sh)"
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/dev/ct/kodi-v1.sh)"
 ```
 Kodi should be attached to TTY7 console
 
 If kodi is not installed automatically, run in lxc console:
 
 ```yaml
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/main/setup/kodi-install.sh)"
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/dev/setup/kodi-install.sh)"
 ```
 
 ## To Update Kodi Media Manager:
@@ -59,5 +59,5 @@ Shutdown of the lxc is available in kodi or through the desktop shortcut, so tha
 ## Bluetooth Setup
 If you want to add bluetooth device in Proxmox host, run the following script in proxmox shell:
 ```
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/main/ct/bluetooth-setup.sh)"
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/dev/ct/bluetooth-setup.sh)"
 ```
