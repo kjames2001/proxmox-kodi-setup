@@ -597,7 +597,7 @@ if [ "$INSTALL_MODE" = "xfce" ]; then
                 DEFAULT_SESSION='$DEFAULT_SESSION' \
                 BROWSER_URL='$BROWSER_URL' \
                 INSTALL_APPS='$INSTALL_APPS'; \
-        $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
+        $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/dev/setup/xfce-install.sh)" || exit
     SUCCESS_MSG="XFCE + Session Manager installed successfully!"
     ADDITIONAL_INFO="• Session manager runs on boot\n• Default session: $DEFAULT_SESSION"
     [[ "$DEFAULT_SESSION" =~ ^(Firefox|Brave|Chrome)$ ]] && \
@@ -605,7 +605,7 @@ if [ "$INSTALL_MODE" = "xfce" ]; then
     ADDITIONAL_INFO="${ADDITIONAL_INFO}\n• All selected apps installed\n• Steam updates silently in background when not the active session\n• Change default any time from the session menu"
 else
     lxc-attach -n $CTID -- bash -c \
-        "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/$var_install.sh)" || exit
+        "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/dev/setup/$var_install.sh)" || exit
     SUCCESS_MSG="Standalone Kodi installed successfully!"
     ADDITIONAL_INFO="• Kodi runs directly on TTY7\n• Minimal overhead for best performance"
 fi
