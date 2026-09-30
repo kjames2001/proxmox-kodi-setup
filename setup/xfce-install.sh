@@ -201,6 +201,39 @@ systemctl daemon-reload
 msg_ok "Xorg input detection configured"
 
 # ─────────────────────────────────────────────
+# Pin Xorg to the AMD iGPU
+# ─────────────────────────────────────────────
+# On hosts with a discrete GPU (e.g. NVIDIA) the firmware may mark the dGPU
+# as boot VGA. Xorg autodetect then probes the dGPU, fails with
+# "Failed to open DRM device ... -19" and exits with
+# "Cannot run in framebuffer mode". An explicit BusID fixes it.
+# NOTE: Xorg BusID values are DECIMAL (PCI c8:00.0 -> "PCI:200:0:0").
+msg_info "Pinning Xorg to the AMD iGPU"
+mkdir -p /etc/X11/xorg.conf.d
+IGPU_BUSID=""
+for dev in /sys/class/drm/card*/device; do
+    [ "$(cat "$dev/vendor" 2>/dev/null)" = "0x1002" ] || continue
+    addr=$(basename "$(readlink -f "$dev")")          # e.g. 0000:c8:00.0
+    bus=${addr#*:}; bus=${bus%%:*}
+    slot=${addr##*:}; slot=${slot%%.*}
+    fn=${addr##*.}
+    IGPU_BUSID="PCI:$((16#$bus)):$((16#$slot)):$((16#$fn))"
+    break
+done
+if [ -n "$IGPU_BUSID" ]; then
+    cat > /etc/X11/xorg.conf.d/20-igpu.conf << XORGEOF
+Section "Device"
+    Identifier "iGPU"
+    Driver "amdgpu"
+    BusID "$IGPU_BUSID"
+EndSection
+XORGEOF
+    msg_ok "Pinned Xorg to AMD iGPU ($IGPU_BUSID)"
+else
+    msg_ok "No AMD DRM device found; Xorg left on autodetect"
+fi
+
+# ─────────────────────────────────────────────
 # PolicyKit
 # ─────────────────────────────────────────────
 msg_info "Configuring PolicyKit"

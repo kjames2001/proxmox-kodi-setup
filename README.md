@@ -42,6 +42,59 @@ privileged container instead. In the Proxmox Shell:
 chmod 660 /dev/tty7
 ```
 
+## Display hotplug (host service)
+
+`host/kodi-hotplug.sh` + `host/kodi.service` start the Kodi LXC when a
+monitor is connected and stop it when the monitor is unplugged. Install in the
+Proxmox Shell:
+```yaml
+mkdir -p /root/scripts
+wget -qO /root/scripts/kodi.sh https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/dev/host/kodi-hotplug.sh
+chmod 755 /root/scripts/kodi.sh
+wget -qO /etc/systemd/system/kodi.service https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/dev/host/kodi.service
+# set Environment=KODI_LXC=<your CT id> in the unit if it is not 104
+systemctl daemon-reload && systemctl enable --now kodi.service
+```
+Behaviour:
+- The monitor must be connected continuously for more than 3 s before the LXC
+  is started, and disconnected for more than 3 s before the LXC is stopped.
+  Brief flickers (monitor standby, input switch, a modeset by another
+  container) are ignored.
+- Stopping the LXC manually while the monitor is connected is remembered;
+  it is not restarted until the monitor is really unplugged and replugged.
+- After the LXC stops, the host console is switched back on
+  (`chvt 1` + `echo 0 > /sys/class/graphics/fb0/blank`). Xorg leaves the CRTC
+  disabled on exit and `chvt` alone does not relight it.
+
+## Troubleshooting
+
+### Xorg: "Cannot run in framebuffer mode" / "Failed to open DRM device for pci:... -19"
+
+On hosts with both an AMD iGPU and a discrete GPU the firmware may select the
+dGPU as boot VGA (`dmesg | grep "setting as boot VGA"`). Xorg then probes the
+dGPU and gives up. The install scripts write
+`/etc/X11/xorg.conf.d/20-igpu.conf` pinning Xorg to the iGPU:
+```
+Section "Device"
+    Identifier "iGPU"
+    Driver "amdgpu"
+    BusID "PCI:200:0:0"
+EndSection
+```
+`BusID` is **decimal**: `lspci` address `c8:00.0` -> `PCI:200:0:0`.
+`PCI:0xc8:0x0:0x0` is parsed as bus 0 and fails with "No devices detected".
+
+### glamor: "Refusing to try glamor on llvmpipe"
+
+The container's Mesa is too old for the iGPU (gfx1150 needs Mesa 24.1+).
+Debian 13 is fine. Older Ubuntu 22.04 containers: add `ppa:kisak/turtle`
+(kisak-mesa stable) and upgrade only the Mesa/libdrm/LLVM packages.
+
+### Only one container can drive the display
+
+Only one Xorg can be DRM master of `/dev/dri/card0`. Stop the other display
+container first (`pct stop <id>`).
+
 ## XFCE Desktop Environment
 If you would like a desktop env, select it when running the script.
 

@@ -1,0 +1,17 @@
+[Unit]
+Description=Hotplug manager for Kodi lxc
+After=local-fs.target network-pre.target pve-cluster.service pvedaemon.service
+Wants=multi-user.target
+
+[Service]
+Type=simple
+# Container ID of the Kodi/XFCE LXC
+Environment=KODI_LXC=104
+ExecStartPre=/bin/sleep 60
+ExecStart=/root/scripts/kodi.sh
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
