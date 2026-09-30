@@ -499,6 +499,7 @@ export PCT_OSTYPE=$var_os
 export PCT_OSVERSION=$var_version
 export PCT_DISK_SIZE=$DISK_SIZE
 export PCT_OPTIONS="
+  -arch $(dpkg --print-architecture)
   -features $FEATURES
   -hostname $HN
   -net0 name=eth0,bridge=$BRG$MAC,ip=$NET$GATE$VLAN
@@ -509,7 +510,16 @@ export PCT_OPTIONS="
   $PW
   $DNS
 "
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/tteck/Proxmox/main/ct/create_lxc.sh)" || exit
+# tteck's create_lxc.sh picks TEMPLATES[-1] from a version sort that does not
+# filter by CPU architecture. Since the Debian 13.6 release publishes both
+# amd64 and arm64 images, an arm64 rootfs can be selected on an amd64 host
+# (and vice versa), which makes the container fail to boot (sync_wait: 34).
+# We therefore vendor an arch-patched copy (ct/create_lxc-patched.sh, based
+# on tteck/Proxmox ct/create_lxc.sh) and use it, falling back to tteck's.
+CREATE_LXC_URL="https://raw.githubusercontent.com/kjames2001/proxmox-kodi-setup/dev/ct/create_lxc-patched.sh"
+CREATE_LXC_URL_FALLBACK="https://raw.githubusercontent.com/tteck/Proxmox/main/ct/create_lxc.sh"
+CREATE_LXC="$(wget -qLO - "$CREATE_LXC_URL" 2>/dev/null || wget -qLO - "$CREATE_LXC_URL_FALLBACK")"
+bash -c "$CREATE_LXC" || exit
 
 msg_info "Pre-starting LXC Container"
 pct start $CTID
